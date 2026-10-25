@@ -1,6 +1,5 @@
 -- ============================================================
--- Hello Hub - Supreme Evade Edition (All-in-One)
--- Features: Inf Jump, Inf Slide, ESP, Auto Evade, Animations
+-- Hello Hub - Supreme Evade Edition (Speed & Slide Bypass)
 -- ============================================================
 
 local Players = game:GetService("Players")
@@ -16,8 +15,6 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui", 15)
 if not playerGui then return end
 
--- ⭐ ไอดีรูปภาพของคุณ
-local ASSET_DECORATION = "rbxassetid://113307759811921"
 local ASSET_BACKGROUND = "rbxassetid://136946660345051"
 
 -- ============ Theme & Config ============
@@ -42,14 +39,19 @@ local state = {
     autoCollect = false, nextbotEsp = false, godmode = false,
     -- Utility
     noclip = false, antiAfk = false, fullbright = false,
-    -- UI
+    -- UI Config
+    uiScale = 1.0, uiTransparency = 0.1, hideFloat = false,
+    jumpBtnSize = 60, iconSize = 50,
+    keybindName = "RightShift", keybind = Enum.KeyCode.RightShift,
     jumpBtnToggled = false, lockBtns = false
 }
 
 local character, humanoid, rootPart
 local flyBodyVel, flyBodyGyro = nil, nil
+local speedBodyVel, slideBodyVel = nil, nil -- ⭐ ตัวแปรสำหรับ Speed และ Slide
 local espHighlights = {}
 local jumpDebounce = false
+local mainFrame, floatGui
 
 -- ============ Helpers ============
 local function create(class, props, children)
@@ -63,17 +65,22 @@ local function corner(i, r) return create("UICorner", { CornerRadius = UDim.new(
 local function stroke(i, c, t) return create("UIStroke", { Color = c or Theme.accent, Thickness = t or 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = i }) end
 local function gradient(i, c1, c2, rot) return create("UIGradient", { Color = ColorSequence.new(c1, c2), Rotation = rot or 0, Parent = i }) end
 
--- ============ Character Setup ============
+-- ============ Character ============
 local function onCharacterAdded(char)
     character = char
     humanoid = char:WaitForChild("Humanoid", 5)
     rootPart = char:WaitForChild("HumanoidRootPart", 5)
     if humanoid then 
         humanoid.JumpPower = state.jumpPower
-        humanoid.WalkSpeed = state.speedEnabled and state.walkSpeed or 16 
+        humanoid.WalkSpeed = 16 -- ⭐ ล็อคค่าไว้ที่ 16 ป้องกัน Anti-cheat
     end
+    
+    -- ล้างค่า BodyVelocity เก่าเมื่อเกิดใหม่
     if flyBodyVel then flyBodyVel:Destroy(); flyBodyVel = nil end
     if flyBodyGyro then flyBodyGyro:Destroy(); flyBodyGyro = nil end
+    if speedBodyVel then speedBodyVel:Destroy(); speedBodyVel = nil end
+    if slideBodyVel then slideBodyVel:Destroy(); slideBodyVel = nil end
+    
     state.fly = false; state.godmode = false
 end
 if player.Character then onCharacterAdded(player.Character) end
@@ -172,6 +179,15 @@ local function addSlider(p, name, text, min, max, def, cb)
     UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
 end
 
+local function addInput(p, text, def, cb)
+    local f = create("Frame", { Size = UDim2.new(1, 0, 0, 55), BackgroundColor3 = Theme.card, BackgroundTransparency = 0.3, ZIndex = 15, Parent = p })
+    corner(f, 8); stroke(f, Color3.fromRGB(80, 40, 10), 1)
+    create("TextLabel", { Size = UDim2.new(1, -20, 0, 20), Position = UDim2.new(0, 14, 0, 6), BackgroundTransparency = 1, Text = text, TextColor3 = Theme.text, Font = Enum.Font.Gotham, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Active = false, ZIndex = 16, Parent = f })
+    local box = create("TextBox", { Size = UDim2.new(1, -28, 0, 24), Position = UDim2.new(0, 14, 0, 26), BackgroundColor3 = Color3.fromRGB(15, 8, 4), Text = def, TextColor3 = Theme.accentGlow, Font = Enum.Font.GothamBold, TextSize = 12, ClearTextOnFocus = false, Active = true, ZIndex = 17, Parent = f })
+    corner(box, 4); stroke(box, Theme.accent, 1)
+    box.FocusLost:Connect(function() if cb then pcall(cb, box.Text) end end)
+end
+
 local function createCard(parent, iconText, title, value, sub)
     local c = create("Frame", { Size = UDim2.new(0.48, 0, 0, 90), BackgroundColor3 = Theme.card, BackgroundTransparency = 0.4, Active = false, ZIndex = 10, Parent = parent })
     corner(c, 10); stroke(c, Theme.accent, 1)
@@ -179,13 +195,12 @@ local function createCard(parent, iconText, title, value, sub)
     create("TextLabel", { Size = UDim2.new(1, -40, 0, 20), Position = UDim2.new(0, 42, 0, 14), BackgroundTransparency = 1, Text = title, TextColor3 = Theme.text_dim, Font = Enum.Font.GothamMedium, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Active = false, ZIndex = 11, Parent = c })
     create("TextLabel", { Size = UDim2.new(1, -15, 0, 30), Position = UDim2.new(0, 15, 0, 35), BackgroundTransparency = 1, Text = value, TextColor3 = Theme.text, Font = Enum.Font.GothamBold, TextSize = 22, TextXAlignment = Enum.TextXAlignment.Left, Active = false, ZIndex = 11, Parent = c })
     create("TextLabel", { Size = UDim2.new(1, -15, 0, 15), Position = UDim2.new(0, 15, 0, 65), BackgroundTransparency = 1, Text = sub, TextColor3 = Theme.text_dim, Font = Enum.Font.Gotham, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left, Active = false, ZIndex = 11, Parent = c })
-    
     c.MouseEnter:Connect(function() TweenService:Create(c, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { BackgroundTransparency = 0.2, Size = UDim2.new(0.49, 0, 0, 92), Position = UDim2.new(-0.005, 0, -1, 0) }):Play() end)
     c.MouseLeave:Connect(function() TweenService:Create(c, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { BackgroundTransparency = 0.4, Size = UDim2.new(0.48, 0, 0, 90), Position = UDim2.new(0, 0, 0, 0) }):Play() end)
     return c
 end
 
--- ============ ⭐ ระบบกระโดด Evade Bypass ============
+-- ============ ระบบกระโดด Evade Bypass ============
 local function attemptJump()
     if not humanoid or humanoid.Health <= 0 or not rootPart then return end
     if jumpDebounce then return end
@@ -202,7 +217,6 @@ local function attemptJump()
         if state.infJump then
             jumpDebounce = true
             pcall(function()
-                -- ใช้ Velocity ดันขึ้น 50 ไม่ลอยฟ้า
                 rootPart.Velocity = Vector3.new(rootPart.Velocity.X, 50, rootPart.Velocity.Z)
                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
             end)
@@ -212,19 +226,39 @@ local function attemptJump()
     end
 end
 
+local function updateFloatingSizes()
+    if not floatGui then return end
+    local jumpContainer = floatGui:FindFirstChild("JumpContainer")
+    if jumpContainer then
+        jumpContainer.Size = UDim2.new(0, state.jumpBtnSize, 0, state.jumpBtnSize)
+        local glow = jumpContainer:FindFirstChild("Glow")
+        if glow then local gc = glow:FindFirstChildOfClass("UICorner"); if gc then gc.CornerRadius = UDim.new(0, state.jumpBtnSize / 2 + 5) end end
+        local jb = jumpContainer:FindFirstChild("JumpBtn")
+        if jb then local jbc = jb:FindFirstChildOfClass("UICorner"); if jbc then jbc.CornerRadius = UDim.new(0, state.jumpBtnSize / 2) end; jb.TextSize = math.floor(state.jumpBtnSize * 0.55) end
+    end
+    
+    local iconContainer = floatGui:FindFirstChild("IconContainer")
+    if iconContainer then
+        iconContainer.Size = UDim2.new(0, state.iconSize, 0, state.iconSize)
+        local iconGlow = iconContainer:FindFirstChild("IconGlow")
+        if iconGlow then local igc = iconGlow:FindFirstChildOfClass("UICorner"); if igc then igc.CornerRadius = UDim.new(0, state.iconSize / 2 + 3) end end
+        local ti = iconContainer:FindFirstChild("ToggleIcon")
+        if ti then local tic = ti:FindFirstChildOfClass("UICorner"); if tic then tic.CornerRadius = UDim.new(0, state.iconSize / 2) end; ti.TextSize = math.floor(state.iconSize * 0.45) end
+    end
+end
+
 -- ============ Floating UI ============
-local floatGui
 local function buildFloatingUI()
     if floatGui then floatGui:Destroy() end
     floatGui = create("ScreenGui", { Name = "HelloHubFloating", ResetOnSpawn = false, DisplayOrder = 99999, Parent = playerGui })
 
-    local jumpContainer = create("Frame", { Size = UDim2.new(0, 60, 0, 60), Position = UDim2.new(0.05, 0, 0.6, 0), BackgroundTransparency = 1, Parent = floatGui })
-    local glow = create("Frame", { Size = UDim2.new(1, 10, 1, 10), Position = UDim2.new(0, -5, 0, -5), BackgroundColor3 = Theme.accent, BackgroundTransparency = 0.6, Active = false, Parent = jumpContainer })
-    corner(glow, 35)
+    local jumpContainer = create("Frame", { Name = "JumpContainer", Size = UDim2.new(0, state.jumpBtnSize, 0, state.jumpBtnSize), Position = UDim2.new(0.05, 0, 0.6, 0), BackgroundTransparency = 1, Visible = not state.hideFloat, Parent = floatGui })
+    local glow = create("Frame", { Name = "Glow", Size = UDim2.new(1, 10, 1, 10), Position = UDim2.new(0, -5, 0, -5), BackgroundColor3 = Theme.accent, BackgroundTransparency = 0.6, Active = false, Parent = jumpContainer })
+    corner(glow, state.jumpBtnSize / 2 + 5)
     TweenService:Create(glow, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { BackgroundTransparency = 0.2, Size = UDim2.new(1, 16, 1, 16), Position = UDim2.new(0, -8, 0, -8) }):Play()
     
-    local jumpBtn = create("TextButton", { Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(20, 10, 5), Text = "⤒", TextColor3 = Theme.accent, Font = Enum.Font.GothamBold, TextSize = 32, AutoButtonColor = false, Parent = jumpContainer })
-    corner(jumpBtn, 30); stroke(jumpBtn, Theme.accent, 2)
+    local jumpBtn = create("TextButton", { Name = "JumpBtn", Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(20, 10, 5), Text = "⤒", TextColor3 = Theme.accent, Font = Enum.Font.GothamBold, TextSize = math.floor(state.jumpBtnSize * 0.55), AutoButtonColor = false, Parent = jumpContainer })
+    corner(jumpBtn, state.jumpBtnSize / 2); stroke(jumpBtn, Theme.accent, 2)
 
     local function updateJumpVisual()
         if state.jumpBtnToggled then
@@ -235,21 +269,8 @@ local function buildFloatingUI()
     end
 
     local jPressPos, jStartPos, jDragging = nil, nil, false
-    jumpBtn.InputBegan:Connect(function(i) 
-        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
-            jPressPos = i.Position; jStartPos = jumpContainer.Position; jDragging = false 
-        end 
-    end)
-    jumpBtn.InputEnded:Connect(function(i) 
-        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
-            if not jDragging then 
-                state.jumpBtnToggled = not state.jumpBtnToggled
-                updateJumpVisual()
-                if state.jumpBtnToggled then attemptJump() end
-            end
-            jPressPos = nil 
-        end 
-    end)
+    jumpBtn.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then jPressPos = i.Position; jStartPos = jumpContainer.Position; jDragging = false end end)
+    jumpBtn.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then if not jDragging then state.jumpBtnToggled = not state.jumpBtnToggled; updateJumpVisual(); if state.jumpBtnToggled then attemptJump() end end; jPressPos = nil end end)
     UserInputService.InputChanged:Connect(function(i)
         if not jPressPos or not (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then return end
         local d = i.Position - jPressPos
@@ -257,11 +278,11 @@ local function buildFloatingUI()
         if jDragging and not state.lockBtns then jumpContainer.Position = UDim2.new(jStartPos.X.Scale, jStartPos.X.Offset + d.X, jStartPos.Y.Scale, jStartPos.Y.Offset + d.Y) end
     end)
 
-    local iconContainer = create("Frame", { Size = UDim2.new(0, 50, 0, 50), Position = UDim2.new(0.04, 0, 0.4, 0), BackgroundTransparency = 1, Parent = floatGui })
-    local iconGlow = create("Frame", { Size = UDim2.new(1, 6, 1, 6), Position = UDim2.new(0, -3, 0, -3), BackgroundColor3 = Theme.accentGlow, BackgroundTransparency = 0.5, Active = false, Parent = iconContainer })
-    corner(iconGlow, 28)
-    local toggleIcon = create("TextButton", { Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Theme.accent, Text = "🎃", TextColor3 = Color3.fromRGB(20, 10, 5), Font = Enum.Font.GothamBold, TextSize = 24, AutoButtonColor = false, Parent = iconContainer })
-    corner(toggleIcon, 25); stroke(toggleIcon, Color3.fromRGB(255, 200, 100), 2)
+    local iconContainer = create("Frame", { Name = "IconContainer", Size = UDim2.new(0, state.iconSize, 0, state.iconSize), Position = UDim2.new(0.04, 0, 0.4, 0), BackgroundTransparency = 1, Visible = not state.hideFloat, Parent = floatGui })
+    local iconGlow = create("Frame", { Name = "IconGlow", Size = UDim2.new(1, 6, 1, 6), Position = UDim2.new(0, -3, 0, -3), BackgroundColor3 = Theme.accentGlow, BackgroundTransparency = 0.5, Active = false, Parent = iconContainer })
+    corner(iconGlow, state.iconSize / 2 + 3)
+    local toggleIcon = create("TextButton", { Name = "ToggleIcon", Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Theme.accent, Text = "🎃", TextColor3 = Color3.fromRGB(20, 10, 5), Font = Enum.Font.GothamBold, TextSize = math.floor(state.iconSize * 0.45), AutoButtonColor = false, Parent = iconContainer })
+    corner(toggleIcon, state.iconSize / 2); stroke(toggleIcon, Color3.fromRGB(255, 200, 100), 2)
     TweenService:Create(iconGlow, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { BackgroundTransparency = 0.2, Size = UDim2.new(1, 14, 1, 14), Position = UDim2.new(0, -7, 0, -7) }):Play()
     
     local iPressPos, iStartPos, iDragging = nil, nil, false
@@ -282,14 +303,15 @@ local function buildGUI()
     local sg = create("ScreenGui", { Name = "HelloHubUI", ResetOnSpawn = false, DisplayOrder = 99998, Parent = playerGui })
     create("ImageLabel", { Size = UDim2.new(0, 540, 0, 340), Position = UDim2.new(0.5, -270, 0.5, -170), BackgroundTransparency = 1, Image = "rbxassetid://1316045217", ImageColor3 = Color3.fromRGB(0,0,0), ImageTransparency = 0.4, ScaleType = Enum.ScaleType.Slice, SliceCenter = Rect.new(10,10,118,118), ZIndex = 1, Parent = sg })
 
-    local main = create("Frame", { Size = UDim2.new(0, 520, 0, 320), Position = UDim2.new(0.5, -260, 0.5, -160), BackgroundColor3 = Theme.main, Active = true, ClipsDescendants = true, ZIndex = 2, Parent = sg })
-    corner(main, 10); stroke(main, Theme.accent, 2)
+    mainFrame = create("Frame", { Size = UDim2.new(0, 520, 0, 320), Position = UDim2.new(0.5, -260, 0.5, -160), BackgroundColor3 = Theme.main, BackgroundTransparency = state.uiTransparency, Active = true, ClipsDescendants = true, ZIndex = 2, Parent = sg })
+    corner(mainFrame, 10); stroke(mainFrame, Theme.accent, 2)
+    
+    local uiscale = create("UIScale", { Scale = state.uiScale, Parent = mainFrame })
 
-    create("ImageLabel", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Image = ASSET_BACKGROUND, ScaleType = Enum.ScaleType.Crop, ImageTransparency = 0.4, Active = false, ZIndex = 3, Parent = main })
-    create("ImageLabel", { Size = UDim2.new(1.15, 0, 1.15, 0), Position = UDim2.new(-0.075, 0, -0.075, 0), BackgroundTransparency = 1, Image = ASSET_DECORATION, ScaleType = Enum.ScaleType.Fit, ImageTransparency = 0.2, Active = false, ZIndex = 4, Parent = main })
-    create("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(0,0,0), BackgroundTransparency = 0.6, Active = false, ZIndex = 5, Parent = main }); corner(main:GetChildren()[5], 10)
+    create("ImageLabel", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Image = ASSET_BACKGROUND, ScaleType = Enum.ScaleType.Crop, ImageTransparency = 0.4, Active = false, ZIndex = 3, Parent = mainFrame })
+    create("Frame", { Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = Color3.fromRGB(0,0,0), BackgroundTransparency = 0.6, Active = false, ZIndex = 5, Parent = mainFrame }); corner(mainFrame:GetChildren()[3], 10)
 
-    local topBar = create("Frame", { Size = UDim2.new(1, 0, 0, 45), BackgroundTransparency = 1, Active = true, ZIndex = 10, Parent = main })
+    local topBar = create("Frame", { Size = UDim2.new(1, 0, 0, 45), BackgroundTransparency = 1, Active = true, ZIndex = 10, Parent = mainFrame })
     create("TextLabel", { Size = UDim2.new(0, 200, 1, 0), Position = UDim2.new(0, 20, 0, 0), BackgroundTransparency = 1, Text = "Hello Hub", TextColor3 = Theme.accentGlow, Font = Enum.Font.GothamBold, TextSize = 20, TextXAlignment = Enum.TextXAlignment.Left, Active = false, ZIndex = 11, Parent = topBar })
 
     local hideBtn = create("TextButton", { Size = UDim2.new(0, 28, 0, 28), Position = UDim2.new(1, -75, 0.5, -14), BackgroundColor3 = Theme.card, Text = "—", TextColor3 = Theme.accentGlow, Font = Enum.Font.GothamBold, ZIndex = 11, Parent = topBar })
@@ -301,14 +323,14 @@ local function buildGUI()
     closeBtn.MouseButton1Click:Connect(function() sg:Destroy(); if floatGui then floatGui:Destroy() end; notify("System", "ปิด GUI แล้ว", Theme.danger) end)
 
     local mPressPos, mStartPos, mDragging = nil, nil, false
-    topBar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then mPressPos = i.Position; mStartPos = main.Position; mDragging = true end end)
-    UserInputService.InputChanged:Connect(function(i) if mDragging and mPressPos and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - mPressPos; main.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + d.X, mStartPos.Y.Scale, mStartPos.Y.Offset + d.Y) end end)
+    topBar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then mPressPos = i.Position; mStartPos = mainFrame.Position; mDragging = true end end)
+    UserInputService.InputChanged:Connect(function(i) if mDragging and mPressPos and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - mPressPos; mainFrame.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + d.X, mStartPos.Y.Scale, mStartPos.Y.Offset + d.Y) end end)
     UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then mDragging = false; mPressPos = nil end end)
 
-    local sidebar = create("Frame", { Size = UDim2.new(0, 130, 1, -60), Position = UDim2.new(0, 15, 0, 50), BackgroundTransparency = 1, ZIndex = 10, Parent = main })
+    local sidebar = create("Frame", { Size = UDim2.new(0, 130, 1, -60), Position = UDim2.new(0, 15, 0, 50), BackgroundTransparency = 1, ZIndex = 10, Parent = mainFrame })
     create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = sidebar })
 
-    local content = create("Frame", { Size = UDim2.new(1, -165, 1, -65), Position = UDim2.new(0, 155, 0, 50), BackgroundColor3 = Theme.panel, BackgroundTransparency = 0.4, ZIndex = 10, Parent = main })
+    local content = create("Frame", { Size = UDim2.new(1, -165, 1, -65), Position = UDim2.new(0, 155, 0, 50), BackgroundColor3 = Theme.panel, BackgroundTransparency = 0.4, ZIndex = 10, Parent = mainFrame })
     corner(content, 10); stroke(content, Color3.fromRGB(80, 40, 10), 1.5)
 
     local function createTab(name, iconText)
@@ -363,10 +385,18 @@ local function buildGUI()
             if humanoid then humanoid.PlatformStand = false end
         end
     end)
+    
+    -- ⭐ [ Slide & Speed ] แก้ไขให้ใช้ BodyVelocity
     addSection(moveTab, "Slide & Speed")
-    addToggle(moveTab, "infiniteSlide", "Infinite Slide (พุ่งตัว)", state.infiniteSlide, function(v) state.infiniteSlide = v end)
-    addToggle(moveTab, "speed", "Enable WalkSpeed", state.speedEnabled, function(v) state.speedEnabled = v; if humanoid then humanoid.WalkSpeed = v and state.walkSpeed or 16 end end)
-    addSlider(moveTab, "walkSpeed", "WalkSpeed", 16, 100, 35, function(v) state.walkSpeed = v; if state.speedEnabled and humanoid then humanoid.WalkSpeed = v end end)
+    addToggle(moveTab, "infiniteSlide", "Infinite Slide (พุ่งตัว)", state.infiniteSlide, function(v) 
+        state.infiniteSlide = v 
+        if not v and slideBodyVel then slideBodyVel:Destroy(); slideBodyVel = nil end
+    end)
+    addToggle(moveTab, "speed", "Enable WalkSpeed", state.speedEnabled, function(v) 
+        state.speedEnabled = v
+        if not v and speedBodyVel then speedBodyVel:Destroy(); speedBodyVel = nil end
+    end)
+    addSlider(moveTab, "walkSpeed", "WalkSpeed", 16, 100, 35, function(v) state.walkSpeed = v end)
 
     -- [ Evade Tab ]
     addSection(evadeTab, "Survival")
@@ -377,7 +407,6 @@ local function buildGUI()
     addToggle(evadeTab, "autoEvade", "Auto Evade (วาร์ปหนี)", state.autoEvade, function(v) state.autoEvade = v end)
     addSlider(evadeTab, "evadeRange", "Evade Distance", 10, 100, state.evadeRange, function(v) state.evadeRange = v end)
     addToggle(evadeTab, "autoCollect", "Auto Collect Items", state.autoCollect, function(v) state.autoCollect = v end)
-    
     addSection(evadeTab, "Teleport")
     addButton(evadeTab, "⬆️ วาร์ปขึ้นที่สูงที่สุด", Theme.accent, function()
         if character and rootPart then
@@ -398,20 +427,64 @@ local function buildGUI()
         end
     end)
 
-    -- [ Visuals ]
+    -- [ Visuals ] & [ Utility ]
     addSection(visTab, "Lighting")
     addToggle(visTab, "fullbright", "Fullbright", state.fullbright, function(v) state.fullbright = v; Lighting.Ambient = v and Color3.fromRGB(255,255,255) or Color3.fromRGB(70,70,70) end)
-    
-    -- [ Utility ]
     addSection(utilTab, "System")
     addToggle(utilTab, "noclip", "Noclip", state.noclip, function(v) state.noclip = v end)
     addToggle(utilTab, "antiAfk", "Anti AFK", state.antiAfk, function(v) state.antiAfk = v end)
 
     -- [ Settings ]
-    addSection(cfgTab, "System")
+    addSection(cfgTab, "Menu Appearance")
+    addSlider(cfgTab, "uiScale", "GUI Scale", 0.8, 1.3, state.uiScale, function(v)
+        state.uiScale = v
+        if mainFrame then local s = mainFrame:FindFirstChildOfClass("UIScale"); if s then s.Scale = v end end
+    end)
+    addSlider(cfgTab, "uiTransparency", "GUI Transparency", 0, 0.5, state.uiTransparency, function(v)
+        state.uiTransparency = v
+        if mainFrame then mainFrame.BackgroundTransparency = v end
+    end)
+
+    addSection(cfgTab, "Floating Buttons")
+    addSlider(cfgTab, "jumpBtnSize", "ขนาดปุ่มกระโดด", 40, 120, state.jumpBtnSize, function(v) state.jumpBtnSize = v; updateFloatingSizes() end)
+    addSlider(cfgTab, "iconSize", "ขนาดปุ่ม GUI", 40, 120, state.iconSize, function(v) state.iconSize = v; updateFloatingSizes() end)
+    addToggle(cfgTab, "hideFloat", "ซ่อนปุ่มลอย", state.hideFloat, function(v)
+        state.hideFloat = v
+        if floatGui then for _, child in ipairs(floatGui:GetChildren()) do if child:IsA("Frame") then child.Visible = not v end end end
+    end)
+    addButton(cfgTab, "📍 รีเซ็ตตำแหน่งปุ่ม", Theme.card, function()
+        if floatGui then
+            local jc = floatGui:FindFirstChild("JumpContainer")
+            local ic = floatGui:FindFirstChild("IconContainer")
+            if jc then jc.Position = UDim2.new(0.05, 0, 0.6, 0) end
+            if ic then ic.Position = UDim2.new(0.04, 0, 0.4, 0) end
+            notify("Settings", "รีเซ็ตตำแหน่งปุ่มแล้ว", Theme.success)
+        end
+    end)
+
+    addSection(cfgTab, "Interface")
+    addInput(cfgTab, "เปลี่ยนปุ่มเปิด/ปิด GUI (เช่น RightShift, F, G):", state.keybindName, function(txt)
+        if #txt > 0 then
+            local success, key = pcall(function() return Enum.KeyCode[txt] end)
+            if success and key then
+                state.keybind = key; state.keybindName = txt
+                notify("Settings", "เปลี่ยนปุ่มลัดเป็น " .. txt .. " แล้ว", Theme.success)
+            else
+                notify("Settings", "ปุ่มไม่ถูกต้อง!", Theme.danger)
+            end
+        end
+    end)
+
+    addSection(cfgTab, "System & Reset")
     addToggle(cfgTab, "lockBtns", "🔒 ล็อกปุ่มลอย", state.lockBtns, function(v) state.lockBtns = v end)
     addToggle(cfgTab, "godmode", "Godmode", state.godmode, function(v) state.godmode = v end)
-    addButton(cfgTab, "❌ ปิด GUI ทั้งหมด", Theme.danger, function() sg:Destroy(); if floatGui then floatGui:Destroy() end end)
+    addButton(cfgTab, "🔄 รีเซ็ตการตั้งค่าทั้งหมด", Theme.danger, function()
+        state.uiScale = 1.0; state.uiTransparency = 0.1; state.jumpBtnSize = 60; state.iconSize = 50
+        state.keybind = Enum.KeyCode.RightShift; state.keybindName = "RightShift"
+        if mainFrame then local s = mainFrame:FindFirstChildOfClass("UIScale"); if s then s.Scale = 1.0 end; mainFrame.BackgroundTransparency = 0.1 end
+        updateFloatingSizes(); notify("Settings", "รีเซ็ตการตั้งค่าทั้งหมดแล้ว", Theme.success); buildGUI()
+    end)
+    addButton(cfgTab, "❌ ปิด GUI ทั้งหมด", Color3.fromRGB(200, 50, 50), function() sg:Destroy(); if floatGui then floatGui:Destroy() end end)
 
     ui.tabs["Dash"].scroll.Visible = true
     ui.tabs["Dash"].indicator.Visible = true
@@ -421,9 +494,9 @@ local function buildGUI()
     local dashStroke = ui.tabs["Dash"].btn:FindFirstChildOfClass("UIStroke")
     if dashStroke then dashStroke.Transparency = 0 end
     
-    main.Position = UDim2.new(0.5, -260, 0.5, -100)
-    main.BackgroundTransparency = 1
-    TweenService:Create(main, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = UDim2.new(0.5, -260, 0.5, -160), BackgroundTransparency = 0.1 }):Play()
+    mainFrame.Position = UDim2.new(0.5, -260, 0.5, -100)
+    mainFrame.BackgroundTransparency = 1
+    TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = UDim2.new(0.5, -260, 0.5, -160), BackgroundTransparency = state.uiTransparency }):Play()
 end
 
 -- ============ Main Loops ============
@@ -498,36 +571,52 @@ task.spawn(function()
     end
 end)
 
--- ⭐ ลูปการทำงานหลัก (Jump, Slide, Godmode)
 RunService.Heartbeat:Connect(function()
     if not humanoid or not rootPart or humanoid.Health <= 0 then return end
     
-    -- Auto Jump / Jump Button
     if (state.autoJump or state.jumpBtnToggled) and humanoid.FloorMaterial ~= Enum.Material.Air then
         attemptJump()
     end
     
-    -- Infinite Slide (Bypass ด้วย Velocity)
-    if state.infiniteSlide then
-        local moveDir = humanoid.MoveDirection
-        local camCF = workspace.CurrentCamera.CFrame
-        if moveDir.Magnitude > 0.1 then
-            -- พุ่งตามทิศทางที่กด WASD
-            rootPart.Velocity = Vector3.new(moveDir.X * 60, rootPart.Velocity.Y, moveDir.Z * 60)
-        else
-            -- พุ่งไปข้างหน้าตามกล้อง
-            rootPart.Velocity = Vector3.new(camCF.LookVector.X * 60, rootPart.Velocity.Y, camCF.LookVector.Z * 60)
+    -- ⭐ 1. ระบบ Speed (ใช้ BodyVelocity ไม่ให้ Anti-cheat จับ)
+    if state.speedEnabled then
+        if not speedBodyVel then
+            speedBodyVel = Instance.new("BodyVelocity")
+            speedBodyVel.MaxForce = Vector3.new(1e5, 0, 1e5) -- บังคับเฉพาะแกน X และ Z
+            speedBodyVel.Parent = rootPart
         end
+        if humanoid.MoveDirection.Magnitude > 0.1 then
+            speedBodyVel.Velocity = humanoid.MoveDirection * state.walkSpeed
+        else
+            speedBodyVel.Velocity = Vector3.new(0, 0, 0)
+        end
+    else
+        if speedBodyVel then speedBodyVel:Destroy(); speedBodyVel = nil end
     end
     
-    -- Anti-Ragdoll & Godmode & Speed
+    -- ⭐ 2. ระบบ Infinite Slide (ใช้ BodyVelocity)
+    if state.infiniteSlide then
+        if not slideBodyVel then
+            slideBodyVel = Instance.new("BodyVelocity")
+            slideBodyVel.MaxForce = Vector3.new(1e5, 0, 1e5)
+            slideBodyVel.Parent = rootPart
+        end
+        local camCF = workspace.CurrentCamera.CFrame
+        if humanoid.MoveDirection.Magnitude > 0.1 then
+            slideBodyVel.Velocity = humanoid.MoveDirection * 60
+        else
+            slideBodyVel.Velocity = Vector3.new(camCF.LookVector.X * 60, 0, camCF.LookVector.Z * 60)
+        end
+    else
+        if slideBodyVel then slideBodyVel:Destroy(); slideBodyVel = nil end
+    end
+    
     if state.antiRagdoll then
         if humanoid:GetState() == Enum.HumanoidStateType.FallingDown or humanoid:GetState() == Enum.HumanoidStateType.Ragdoll then
             pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Running) end)
         end
     end
     if state.godmode and humanoid.Health < humanoid.MaxHealth then pcall(function() humanoid.Health = humanoid.MaxHealth end) end
-    if state.speedEnabled and humanoid.WalkSpeed ~= state.walkSpeed then humanoid.WalkSpeed = state.walkSpeed end
 end)
 
 RunService.Stepped:Connect(function()
@@ -536,7 +625,6 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- ⭐ ระบบกด Spacebar สำหรับ Inf Jump (PC)
 UserInputService.InputBegan:Connect(function(i, p)
     if p then return end
     if i.KeyCode == Enum.KeyCode.Space then
@@ -544,7 +632,7 @@ UserInputService.InputBegan:Connect(function(i, p)
             attemptJump()
         end
     end
-    if i.KeyCode == Enum.KeyCode.RightShift then
+    if i.KeyCode == state.keybind then
         local sg = playerGui:FindFirstChild("HelloHubUI")
         if sg then sg.Enabled = not sg.Enabled end
     end
@@ -557,5 +645,5 @@ end)
 -- Start
 buildFloatingUI()
 buildGUI()
-notify("Hello Hub", "โหลดระบบ Evade สมบูรณ์แบบ!", Theme.success)
-print("[HelloHub] ✅ Supreme Evade Edition Loaded!")
+notify("Hello Hub", "อัพเดต-->> อัพเดตแก้ความเร็ว (Evade Bypass)!", Theme.success)
+print("[HelloHub] ✅ Supreme Speed Bypass Loaded!")
